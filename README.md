@@ -16,3 +16,6 @@ A repo for Hong Yi and Andrew Repp to collaborate on eBPF Tracing Hackathon Idea
 * Try to capture and associate query text, such that the latency can be definitively associated with a specific query
 * Try to deploy to cluster set up across multiple nodes, if possible
 * Capture additional probe events of interest.  Notably network traffic between cluster nodes would be of interest
+
+# TO RUN
+`sudo -E python3 hackday/2022/gp_latency.py /path/to/gpdb7/bin/postgres`
