@@ -14,15 +14,23 @@ class Data(ct.Structure):
     _fields_ = [
         ('pid', ct.c_uint32), 
         ('timestamp', ct.c_uint64),
-        ('query_string', ct.c_char * 32)
+        ('delta', ct.c_uint64),
+        ('query_string', ct.c_char * 64),
     ]
 
 def write_event(cpu, data, size):
-    casted_data = ct.cast(data, ct.POINTER(Data)).contents     
-    event_string = '{pid}|{timestamp}|{query_string}'.format(
+    casted_data = ct.cast(data, ct.POINTER(Data)).contents
+    if not casted_data.delta:
+        cost_string = "Start" # query start 
+    else:
+        cost = float(casted_data.delta / 1000000)
+        cost_string = f"Duration {cost} ms"
+        
+    event_string = 'PID: {pid} | Timestamp: {timestamp}| Query: {query_string}| {cost} '.format(
         pid=casted_data.pid, 
         timestamp=casted_data.timestamp, 
-        query_string=casted_data.query_string
+        query_string=casted_data.query_string,
+        cost=cost_string
     )
     print(f"Probe event: {event_string}")
     EVENT_LOG_BUFFER.append(event_string)
@@ -54,7 +62,6 @@ def attach_uprobes(bpf, args):
         pid=pid)
 
 
-
 def flush_to_log(logpath):
     with open(logpath, 'w') as fp:
         for event in EVENT_LOG_BUFFER:
@@ -80,7 +87,6 @@ def start_trace(args):
             print("\nDetaching from Greenplum node\n")
 
     flush_to_log(args.output)
-
 
 
 def parse_args():

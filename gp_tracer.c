@@ -1,61 +1,76 @@
 #include <linux/ptrace.h>
+#include <uapi/linux/bpf_perf_event.h>
 
 struct query_data {
     u32 pid;
     u64 timestamp;
+    u64 delta;
     char query_string[200];
 };
 
-#define HASH_SIZE 2^14
-
 BPF_PERF_OUTPUT(events);
 
-void probe_exec_simple_query(struct pt_regs *ctx, char *query_string)
+BPF_HASH(start_tmp, u32, struct query_data);
+
+int probe_exec_simple_query(struct pt_regs *ctx)
 {
     u32 pid = bpf_get_current_pid_tgid();
     struct query_data query = {};
 
     query.pid = pid;
     query.timestamp = bpf_ktime_get_ns();
-    strcpy(query.query_string, "exec_simple_query");
+    char *sql_string= (char *)PT_REGS_PARM1(ctx);
+    bpf_probe_read(&query.query_string, sizeof(query.query_string), sql_string);
+    start_tmp.update(&pid, &query);
     events.perf_submit(ctx, &query, sizeof(query));
-    return;
+    return 0;
 }
 
-void probe_exec_simple_query_return(struct pt_regs *ctx)
+int probe_exec_simple_query_return(struct pt_regs *ctx)
 {
     u32 pid = bpf_get_current_pid_tgid();
-    struct query_data query = {};
-
-    query.pid = pid;
-    query.timestamp = bpf_ktime_get_ns();
-    strcpy(query.query_string, "exec_simple_query_return");
+    struct query_data *sp;
+    sp = start_tmp.lookup(&pid);
+    if (sp == 0) {
+        // missed tracing start
+        return 0;
+    }
+    u64 delta = bpf_ktime_get_ns() - sp->timestamp;
+    struct query_data query =  {.pid = pid, .timestamp = sp->timestamp, .delta = delta};
+    __builtin_memcpy(&query.query_string, "QD Query Done(exec_simple_query)", sizeof(query.query_string));
 
     events.perf_submit(ctx, &query, sizeof(query));
-    return;
+    start_tmp.delete(&pid);
+    return 0;
 }
 
-void probe_exec_mpp_query(struct pt_regs *ctx, char *query_string)
+int probe_exec_mpp_query(struct pt_regs *ctx)
 {
     u32 pid = bpf_get_current_pid_tgid();
     struct query_data query = {};
 
     query.pid = pid;
     query.timestamp = bpf_ktime_get_ns();
-    strcpy(query.query_string, "exec_mpp_query");
+    char *sql_string= (char *)PT_REGS_PARM1(ctx);
+    bpf_probe_read(&query.query_string, sizeof(query.query_string), sql_string);
+    start_tmp.update(&pid, &query);
     events.perf_submit(ctx, &query, sizeof(query));
-    return;
+    return 0;
 }
 
-void probe_exec_mpp_query_return(struct pt_regs *ctx)
+int probe_exec_mpp_query_return(struct pt_regs *ctx)
 {
     u32 pid = bpf_get_current_pid_tgid();
-    struct query_data query = {};
-
-    query.pid = pid;
-    query.timestamp = bpf_ktime_get_ns();
-    strcpy(query.query_string, "exec_mpp_query_return");
-
+    struct query_data *sp;
+    sp = start_tmp.lookup(&pid);
+    if (sp == 0) {
+        // missed tracing start
+        return 0;
+    }
+    u64 delta = bpf_ktime_get_ns() - sp->timestamp;
+    struct query_data query =  {.pid = pid, .timestamp = sp->timestamp, .delta = delta};
+    __builtin_memcpy(&query.query_string, "QE Query Done(exec_mpp_query)", sizeof(query.query_string));
     events.perf_submit(ctx, &query, sizeof(query));
-    return;
+    start_tmp.delete(&pid);
+    return 0;
 }
