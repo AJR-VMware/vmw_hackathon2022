@@ -17,5 +17,15 @@ A repo for Hong Yi and Andrew Repp to collaborate on eBPF Tracing Hackathon Idea
 * Try to deploy to cluster set up across multiple nodes, if possible
 * Capture additional probe events of interest.  Notably network traffic between cluster nodes would be of interest
 
+
+# Prepare
+
+1. install bcc and gpdb7
+2. pip3 install pyelftools
+
 # TO RUN
 `sudo -E python3 hackday/2022/gp_latency.py /path/to/gpdb7/bin/postgres`
+For Node 
+`sudo -E python3 hackday/2022/gp_count_nodes.py /path/to/gpdb7/bin/postgres`
+For net per query
+`sudo -E python3 hackday/2022/gp_net_query.py /path/to/gpdb7/bin/postgres`

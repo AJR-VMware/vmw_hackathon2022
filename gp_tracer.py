@@ -10,27 +10,33 @@ import signal
 from bcc import BPF
 
 EVENT_LOG_BUFFER = []
+
+
 class Data(ct.Structure):
     _fields_ = [
-        ('pid', ct.c_uint32), 
-        ('timestamp', ct.c_uint64),
-        ('delta', ct.c_uint64),
-        ('query_string', ct.c_char * 64),
+        ("pid", ct.c_uint32),
+        ("timestamp", ct.c_uint64),
+        ("delta", ct.c_uint64),
+        ("query_string", ct.c_char * 64),
     ]
+
 
 def write_event(cpu, data, size):
     casted_data = ct.cast(data, ct.POINTER(Data)).contents
     if not casted_data.delta:
-        cost_string = "Start" # query start 
+        cost_string = "Start"  # query start
     else:
+        # us -> ms
         cost = float(casted_data.delta / 1000000)
         cost_string = f"Duration {cost} ms"
-        
-    event_string = 'PID: {pid} | Timestamp: {timestamp}| Query: {query_string}| {cost} '.format(
-        pid=casted_data.pid, 
-        timestamp=casted_data.timestamp, 
-        query_string=casted_data.query_string,
-        cost=cost_string
+
+    event_string = (
+        "PID: {pid} | Timestamp: {timestamp}| Query: {query_string}| {cost} ".format(
+            pid=casted_data.pid,
+            timestamp=casted_data.timestamp,
+            query_string=casted_data.query_string,
+            cost=cost_string,
+        )
     )
     print(f"Probe event: {event_string}")
     EVENT_LOG_BUFFER.append(event_string)
@@ -44,28 +50,30 @@ def attach_uprobes(bpf, args):
         name=binary_path,
         sym="exec_simple_query",
         fn_name="probe_exec_simple_query",
-        pid=pid)
+        pid=pid,
+    )
     bpf.attach_uretprobe(
         name=binary_path,
         sym="exec_simple_query",
         fn_name="probe_exec_simple_query_return",
-        pid=pid)
+        pid=pid,
+    )
     bpf.attach_uprobe(
-        name=binary_path,
-        sym="exec_mpp_query",
-        fn_name="probe_exec_mpp_query",
-        pid=pid)
+        name=binary_path, sym="exec_mpp_query", fn_name="probe_exec_mpp_query", pid=pid
+    )
     bpf.attach_uretprobe(
         name=binary_path,
         sym="exec_mpp_query",
         fn_name="probe_exec_mpp_query_return",
-        pid=pid)
+        pid=pid,
+    )
 
 
 def flush_to_log(logpath):
-    with open(logpath, 'w') as fp:
+    with open(logpath, "w") as fp:
         for event in EVENT_LOG_BUFFER:
-            fp.write(event+"\n")
+            fp.write(event + "\n")
+
 
 def start_trace(args):
     print("Attaching BPF Module to Greenplum Node")
@@ -74,7 +82,7 @@ def start_trace(args):
     interrupted = False
 
     print("Listening for Kernel Events on Greenplum Node")
-    bpf['events'].open_perf_buffer(write_event)
+    bpf["events"].open_perf_buffer(write_event)
 
     # Poll perf buffer, waiting for events to capture
     while not interrupted:
@@ -92,15 +100,18 @@ def start_trace(args):
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Trace query events for Greenplum cluster",
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("path", type=str, help="Path to vendored PostgreSQL binary")
     parser.add_argument(
-        "-p", "--pid", type=int, default=-1,
-        help="Trace only a single, indicated PID"
+        "-p", "--pid", type=int, default=-1, help="Trace only a single, indicated PID"
     )
     parser.add_argument(
-        "-o", "--output", type=str, default="./trace_output.log",
-        help="Redirect printed trace log to desired path"
+        "-o",
+        "--output",
+        type=str,
+        default="./trace_output.log",
+        help="Redirect printed trace log to desired path",
     )
     return parser.parse_args()
 
