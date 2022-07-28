@@ -93,8 +93,6 @@ def attach_probes(bpf, args):
     )
 
     bpf.attach_kprobe(event="__sys_sendto", fn_name="on_send")
-    bpf.attach_kprobe(event="__sys_sendto", fn_name="on_send")
-    bpf.attach_kprobe(event="__sys_recvfrom", fn_name="on_recv")
     bpf.attach_kprobe(event="__sys_recvfrom", fn_name="on_recv")
 
 
