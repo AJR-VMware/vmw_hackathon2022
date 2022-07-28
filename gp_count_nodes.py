@@ -1,9 +1,14 @@
-from bcc import BPF
-from time import sleep
-import signal
-from elftools.elf.elffile import ELFFile
+"""
+Summarize node behavior in Greenplum cluster. Log information to file.
+usage: sudo -E python3 gp_count_nodes.py $GPDB_BIN/postgres [-p PID] [-o LOGPATH]
+"""
 
 import argparse
+import signal
+from time import sleep
+
+from bcc import BPF
+from elftools.elf.elffile import ELFFile
 
 EVENT_LOG_BUFFER = []
 
@@ -38,26 +43,7 @@ def find_enum(dwarfinfo, enum_name):
     return None
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Trace query events for Greenplum cluster",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("path", type=str, help="Path to vendored PostgreSQL binary")
-    parser.add_argument(
-        "-p", "--pid", type=int, default=-1, help="Trace only a single, indicated PID"
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=str,
-        default="./trace_output.log",
-        help="Redirect printed trace log to desired path",
-    )
-    return parser.parse_args()
-
-
-def attach_uprobes(bpf, args):
+def attach_probes(bpf, args):
     binary_path = args.path
     pid = args.pid
     bpf.attach_uprobe(
@@ -71,25 +57,51 @@ def flush_to_log(logpath):
             fp.write(event + "\n")
 
 
+def log_traffic(bpf, nodetag, logpath):
+    with open(logpath, "a") as fp:
+        counts = bpf.get_table("counts")
+        for k, v in counts.items_lookup_and_delete_batch():
+            printstring = f"{nodetag[k.node]} -- {v}"
+            print(printstring)
+            fp.write(f"{printstring}\n")
+
+
 def start_trace(args):
     print("Attaching BPF Module to Greenplum Node")
     bpf = BPF(src_file="gp_count_nodes.c")
-    attach_uprobes(bpf, args)
+    attach_probes(bpf, args)
     nodetag = get_enum(args.path, "NodeTag")
-    # Poll perf buffer, waiting for events to capture
     interrupted = False
+
+    print("Listening for Kernel Events on Greenplum Node")
     while not interrupted:
         try:
-            counts = bpf.get_table("counts")
-            for k, v in counts.items_lookup_and_delete_batch():
-                print(nodetag[k.node], v)
+            sleep(1)
+            log_traffic(bpf, nodetag, args.output)
         except KeyboardInterrupt:
             interrupted = True
             # trap sigint to allow program time to tidy up
             signal.signal(signal.SIGINT, lambda: None)
             print("\nDetaching from Greenplum node\n")
-        sleep(1)
-    flush_to_log(args.output)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Trace query events for Greenplum cluster",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("path", type=str, help="Path to vendored PostgreSQL binary")
+    parser.add_argument(
+        "-p", "--pid", type=int, default=-1, help="Trace only a single, indicated PID"
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        default="./node_count_trace_output.log",
+        help="Redirect printed trace log to desired path",
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":

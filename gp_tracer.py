@@ -1,11 +1,12 @@
 #!/usr/bin/python3
 """
-Track query start and stop time in Greenplum. Print information in log file.
+Track query start and stop time in Greenplum. Log information to file.
 usage: sudo -E python3 gp_latency.py $GPDB_BIN/postgres [-p PID] [-o LOGPATH]
 """
 import argparse
 import ctypes as ct
 import signal
+from time import sleep
 
 from bcc import BPF
 
@@ -42,43 +43,44 @@ def write_event(cpu, data, size):
     EVENT_LOG_BUFFER.append(event_string)
 
 
-def attach_uprobes(bpf, args):
-    binary_path = args.path
-    pid = args.pid
-
+def attach_probes(bpf, args):
     bpf.attach_uprobe(
-        name=binary_path,
+        name=args.path,
         sym="exec_simple_query",
         fn_name="probe_exec_simple_query",
-        pid=pid,
+        pid=args.pid,
     )
     bpf.attach_uretprobe(
-        name=binary_path,
+        name=args.path,
         sym="exec_simple_query",
         fn_name="probe_exec_simple_query_return",
-        pid=pid,
+        pid=args.pid,
     )
     bpf.attach_uprobe(
-        name=binary_path, sym="exec_mpp_query", fn_name="probe_exec_mpp_query", pid=pid
+        name=args.path,
+        sym="exec_mpp_query",
+        fn_name="probe_exec_mpp_query",
+        pid=args.pid,
     )
     bpf.attach_uretprobe(
-        name=binary_path,
+        name=args.path,
         sym="exec_mpp_query",
         fn_name="probe_exec_mpp_query_return",
-        pid=pid,
+        pid=args.pid,
     )
 
 
 def flush_to_log(logpath):
-    with open(logpath, "w") as fp:
+    with open(logpath, "a") as fp:
         for event in EVENT_LOG_BUFFER:
             fp.write(event + "\n")
+    EVENT_LOG_BUFFER.clear()
 
 
 def start_trace(args):
     print("Attaching BPF Module to Greenplum Node")
     bpf = BPF(src_file="gp_tracer.c")
-    attach_uprobes(bpf, args)
+    attach_probes(bpf, args)
     interrupted = False
 
     print("Listening for Kernel Events on Greenplum Node")
@@ -87,7 +89,10 @@ def start_trace(args):
     # Poll perf buffer, waiting for events to capture
     while not interrupted:
         try:
+            sleep(1)
             bpf.perf_buffer_poll()
+            if len(EVENT_LOG_BUFFER) > 1000:
+                flush_to_log(args.output)
         except KeyboardInterrupt:
             interrupted = True
             # trap sigint to allow program time to tidy up
